@@ -1,58 +1,58 @@
+from matplotlib import pyplot as plt
+
 import dpp
 import numpy as np
 import torch
 from copy import deepcopy
-torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
+torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
 # Config
 seed = 0
 np.random.seed(seed)
 torch.manual_seed(seed)
-dataset_name = 'synth/hawkes1'  # run dpp.data.list_datasets() to see the list of available datasets
+dataset_name = 'BPI_Challenge_2017_1k_1.pkl'  # run dpp.data.list_datasets() to see the list of available datasets
 
 # Model config
-context_size = 64                 # Size of the RNN hidden vector
-mark_embedding_size = 32          # Size of the mark embedding (used as RNN input)
-num_mix_components = 64           # Number of components for a mixture model
-rnn_type = "GRU"                  # What RNN to use as an encoder {"RNN", "GRU", "LSTM"}
+context_size = 64  # Size of the RNN hidden vector
+mark_embedding_size = 32  # Size of the mark embedding (used as RNN input)
+num_mix_components = 64  # Number of components for a mixture model
+rnn_type = "GRU"  # What RNN to use as an encoder {"RNN", "GRU", "LSTM"}
 
 # Training config
-batch_size = 64        # Number of sequences in a batch
+batch_size = 64  # Number of sequences in a batch
 regularization = 1e-5  # L2 regularization parameter
-learning_rate = 1e-3   # Learning rate for Adam optimizer
-max_epochs = 1000      # For how many epochs to train
-display_step = 50      # Display training statistics after every display_step
-patience = 50          # After how many consecutive epochs without improvement of val loss to stop training
-
+learning_rate = 1e-3  # Learning rate for Adam optimizer
+max_epochs = 1000  # For how many epochs to train
+display_step = 50  # Display training statistics after every display_step
+patience = 50  # After how many consecutive epochs without improvement of val loss to stop training
 
 # Load the data
 dataset = dpp.data.load_dataset(dataset_name)
 d_train, d_val, d_test = dataset.train_val_test_split(seed=seed)
 
-dl_train = d_train.get_dataloader(batch_size=batch_size, shuffle=True)
+dl_train = d_train.get_dataloader(batch_size=batch_size, shuffle=False)
 dl_val = d_val.get_dataloader(batch_size=batch_size, shuffle=False)
 dl_test = d_test.get_dataloader(batch_size=batch_size, shuffle=False)
-
 
 # Define the model
 print('Building model...')
 mean_log_inter_time, std_log_inter_time = d_train.get_inter_time_statistics()
 
 model = dpp.models.LogNormMix(
-    num_marks=d_train.num_marks,
-    mean_log_inter_time=mean_log_inter_time,
-    std_log_inter_time=std_log_inter_time,
-    context_size=context_size,
-    mark_embedding_size=mark_embedding_size,
-    rnn_type=rnn_type,
-    num_mix_components=num_mix_components,
+        num_marks=d_train.num_marks,
+        mean_log_inter_time=mean_log_inter_time,
+        std_log_inter_time=std_log_inter_time,
+        context_size=context_size,
+        mark_embedding_size=mark_embedding_size,
+        rnn_type=rnn_type,
+        num_mix_components=num_mix_components,
 )
 opt = torch.optim.Adam(model.parameters(), weight_decay=regularization, lr=learning_rate)
 
-
-# Traning
+# Training
 print('Starting training...')
+
 
 def aggregate_loss_over_dataloader(dl):
     total_loss = 0.0
@@ -99,7 +99,6 @@ for epoch in range(max_epochs):
     if epoch % display_step == 0:
         print(f"Epoch {epoch:4d}: loss_train_last_batch = {loss.item():.1f}, loss_val = {loss_val:.1f}")
 
-
 # Evaluation
 model.load_state_dict(best_model)
 model.eval()
@@ -114,3 +113,12 @@ print(f'Negative log-likelihood:\n'
       f' - Train: {final_loss_train:.1f}\n'
       f' - Val:   {final_loss_val:.1f}\n'
       f' - Test:  {final_loss_test:.1f}')
+
+sampled_batch = model.sample(t_end=10000, batch_size=100)
+real_batch = dpp.data.Batch.from_list([s for s in dataset])
+plt.hist(sampled_batch.mask.sum(-1).cpu().numpy(), 50, label="Sampled", density=True, range=(0, 300))
+plt.hist(real_batch.mask.sum(-1).cpu().numpy(), 50, alpha=0.3, label="Real data", density=True, range=(0, 300))
+plt.xlabel("Sequence length")
+plt.ylabel("Frequency")
+plt.legend()
+plt.show()

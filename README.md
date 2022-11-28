@@ -9,10 +9,9 @@ The `master` branch contains a refactored version of the code. Some of the origi
 You can find the original code (used for experiments in the paper) on branch [`original-code`](https://github.com/shchur/ifl-tpp/tree/original-code).
 
 ## Usage
-In order to run the code, you need to install the `dpp` library that contains all the algorithms described in the paper
+To run the code, you need to install the `dpp` library that contains all the algorithms described in the paper
 ```bash
-cd code
-python setup.py install
+pip install -r requirements.txt
 ```
 
 A Jupyter notebook [`code/interactive.ipynb`](https://github.com/shchur/ifl-tpp/blob/master/code/interactive.ipynb) contains the code for training models on the datasets used in the paper.
@@ -31,6 +30,7 @@ dataset = {
 }
 torch.save(dataset, "data/my_dataset.pkl")
 ```
+- A dataprocessing script `dataprocessing.py` is provided to convert the business monitoring datasets to the format described above.
 
 ## Defining new models
 [RecurrentTPP](https://github.com/shchur/ifl-tpp/blob/master/code/dpp/models/recurrent_tpp.py) is the base class for marked TPP models.
@@ -42,15 +42,6 @@ You can also change the `get_features` and `get_context` methods of `RecurrentTP
 ## Mistakes in the old version
 - In the old code we used to normalize the NLL of each sequence by the number of events --- this was incorrect. When computing NLL for multiple TPP sequences, we are only allowed to divide the NLL by the same number for each sequence.
 - In the old code we didn't include the survival time of the last event (i.e. time from the last event until the end of the obseved interval) into the NLL computation. This is fixed in the refactored version (and by the way, this seems to be a common mistake in other TPP implementations online).
-
-
-## Requirements
-```
-numpy=1.16.4
-pytorch=1.2.0
-scikit-learn=0.21.2
-scipy=1.3.1
-```
 
 
 ## Cite
