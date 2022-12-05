@@ -1,11 +1,11 @@
 import dpp
 import torch
 import torch.nn as nn
-
-from torch.distributions import Categorical
-
+import torchmetrics.classification as clf_metrics
 from dpp.data.batch import Batch
 from dpp.utils import diff
+from torch.distributions import Categorical
+from torchmetrics import MeanAbsoluteError
 
 
 class RecurrentTPP(nn.Module):
@@ -23,14 +23,15 @@ class RecurrentTPP(nn.Module):
         rnn_type: Which RNN to use, possible choices {"RNN", "GRU", "LSTM"}
 
     """
+
     def __init__(
-        self,
-        num_marks: int,
-        mean_log_inter_time: float = 0.0,
-        std_log_inter_time: float = 1.0,
-        context_size: int = 32,
-        mark_embedding_size: int = 32,
-        rnn_type: str = "GRU",
+            self,
+            num_marks: int,
+            mean_log_inter_time: float = 0.0,
+            std_log_inter_time: float = 1.0,
+            context_size: int = 32,
+            mark_embedding_size: int = 32,
+            rnn_type: str = "GRU",
     ):
         super().__init__()
         self.num_marks = num_marks
@@ -106,10 +107,11 @@ class RecurrentTPP(nn.Module):
         raise NotImplementedError()
 
     def log_prob(self, batch: dpp.data.Batch) -> torch.Tensor:
-        """Compute log-likelihood for a batch of sequences.
+        """
+        Compute log-likelihood for a batch of sequences.
 
         Args:
-            batch:
+            batch: Batch of sequences in padded format (see dpp.data.batch).
 
         Returns:
             log_p: shape (batch_size,)
@@ -135,6 +137,53 @@ class RecurrentTPP(nn.Module):
             log_p += mark_dist.log_prob(batch.marks)  # (batch_size, seq_len)
         log_p *= batch.mask  # (batch_size, seq_len)
         return log_p.sum(-1) + log_surv_last  # (batch_size,)
+
+    def evaluate_mark(self, batch: dpp.data.Batch, metric: str) -> torch.Tensor:
+        """
+        Compute accuracy/F1-score of mark prediction.
+
+        Args:
+            batch: Batch of sequences in padded format (see dpp.data.batch).
+            metric: "accuracy" or "f1"
+        Returns:
+            acc or f1-score
+
+        """
+        features = self.get_features(batch)
+        context = self.get_context(features)
+
+        assert self.num_marks > 1
+        mark_logits = torch.log_softmax(self.mark_linear(context), dim=-1)
+        mark_dist = Categorical(logits=mark_logits)
+        pred = mark_dist.mode
+        if metric == 'acc':
+            acc = clf_metrics.MulticlassAccuracy(num_classes=self.num_marks)
+            acc(pred, batch.marks)
+            return acc.compute()
+        elif metric == 'f1':
+            f1 = clf_metrics.MulticlassF1Score(num_classes=self.num_marks)
+            f1(pred, batch.marks)
+            return f1.compute()
+
+    def evaluate_timestamp(self, batch: dpp.data.Batch) -> torch.Tensor:
+        """
+        Compute MAE score for timestamp prediction
+
+        Args:
+            batch: Batch of sequences in padded format (see dpp.data.batch).
+        Returns:
+            mae: MAE score
+        """
+        features = self.get_features(batch)
+        context = self.get_context(features)
+        pred_inter_times_dist = self.get_inter_time_dist(context)
+        actual_inter_times_dist = batch.inter_times.clamp(1e-10)
+        next_pred_inter_times = pred_inter_times_dist.sample()
+        next_pred_arrival_timestamp = next_pred_inter_times.cumsum(-1)
+        next_actual_arrival_timestamp = actual_inter_times_dist.cumsum(-1)
+        mae = MeanAbsoluteError()
+        mae(next_pred_arrival_timestamp, next_actual_arrival_timestamp)
+        return mae.compute()
 
     def sample(self, t_end: float, batch_size: int = 1, context_init: torch.Tensor = None) -> dpp.data.Batch:
         """Generate a batch of sequence from the model.

@@ -20,14 +20,14 @@ cases = bpi17["case:concept:name"].unique()
 for case in cases:
     # Extract arrival time of each event
     arrival_time = bpi17.loc[bpi17["case:concept:name"] == case, "time:timestamp"].values
-    # Convert arrival time to datetime format
-    arrival_time = pd.to_datetime(arrival_time)
+    # Convert arrival time to unix timestamp format
+    arrival_time = pd.to_datetime(arrival_time).map(pd.Timestamp.timestamp)
     # Extract start and end time
-    start_time = pd.to_datetime(bpi17.loc[bpi17["case:concept:name"] == case, "time:timestamp"].min())
-    end_time = pd.to_datetime(bpi17.loc[bpi17["case:concept:name"] == case, "time:timestamp"].max())
-    # Convert arrival time to relative time as float type
-    arrival_time = (arrival_time - start_time).total_seconds()
-    # Convert arrival time Float64Index to list
+    start_time = pd.Timestamp(
+        pd.to_datetime(bpi17.loc[bpi17["case:concept:name"] == case, "time:timestamp"].min())).timestamp()
+    end_time = pd.Timestamp(
+        pd.to_datetime(bpi17.loc[bpi17["case:concept:name"] == case, "time:timestamp"].max())).timestamp()
+    # Convert arrival time to list
     arrival_time = arrival_time.array.tolist()
     # Extract marks integer of each event
     marks = bpi17.loc[bpi17["case:concept:name"] == case, "concept:name"].values
@@ -36,13 +36,11 @@ for case in cases:
     dataset['sequences'].append({
         'arrival_times': arrival_time,
         'marks': marks,
-        't_start': 0,
-        't_end': (end_time - start_time).total_seconds()
+        't_start': start_time,
+        't_end': end_time,
+        'case': case
     })
 
 dataset['num_marks'] = bpi17["concept:name"].unique().shape[0]
 
 torch.save(dataset, "data/BPI_Challenge_2017_1k_1.pkl")
-
-
-

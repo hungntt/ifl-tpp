@@ -1,11 +1,18 @@
+# Ignore future warnings
+import warnings
+from copy import deepcopy
+
+import numpy as np
+import torch
 from matplotlib import pyplot as plt
 
 import dpp
-import numpy as np
-import torch
-from copy import deepcopy
+from visualize import visualize
 
-torch.set_default_tensor_type(torch.cuda.FloatTensor)
+warnings.simplefilter(action='ignore', category=FutureWarning)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if device == "cuda":
+    torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
 # Config
 seed = 0
@@ -29,9 +36,10 @@ patience = 50  # After how many consecutive epochs without improvement of val lo
 
 # Load the data
 dataset = dpp.data.load_dataset(dataset_name)
-d_train, d_val, d_test = dataset.train_val_test_split(seed=seed)
-
-dl_train = d_train.get_dataloader(batch_size=batch_size, shuffle=False)
+d_train, d_val, d_test = dataset.train_val_test_split(seed=None, shuffle=False)
+visualize(d_train, d_val, d_test)
+# Create the model
+dl_train = d_train.get_dataloader(batch_size=batch_size, shuffle=True)
 dl_val = d_val.get_dataloader(batch_size=batch_size, shuffle=False)
 dl_test = d_test.get_dataloader(batch_size=batch_size, shuffle=False)
 
@@ -62,6 +70,29 @@ def aggregate_loss_over_dataloader(dl):
             total_loss += -model.log_prob(batch).sum()
             total_count += batch.size
     return total_loss / total_count
+
+
+def evaluate_mark_over_dataloader(dl, metric):
+    total_accuracy = 0.0
+    total_batch = 0
+    with torch.no_grad():
+        for batch in dl:
+            total_accuracy += model.evaluate_mark(batch, metric)
+            total_batch += 1
+    error = total_accuracy / total_batch
+    # Convert unix timestamp to datetime
+
+    return error
+
+
+def evaluate_timestamp_over_dataloader(dl):
+    total_mae = 0.0
+    total_batch = 0
+    with torch.no_grad():
+        for batch in dl:
+            total_mae += model.evaluate_timestamp(batch)
+            total_batch += 1
+    return total_mae / total_batch
 
 
 impatient = 0
@@ -108,13 +139,32 @@ with torch.no_grad():
     final_loss_train = aggregate_loss_over_dataloader(dl_train)
     final_loss_val = aggregate_loss_over_dataloader(dl_val)
     final_loss_test = aggregate_loss_over_dataloader(dl_test)
+    final_acc_train = evaluate_mark_over_dataloader(dl_train, 'acc')
+    final_acc_val = evaluate_mark_over_dataloader(dl_val, 'acc')
+    final_acc_test = evaluate_mark_over_dataloader(dl_test, 'acc')
+    final_f1_train = evaluate_mark_over_dataloader(dl_train, 'f1')
+    final_f1_val = evaluate_mark_over_dataloader(dl_val, 'f1')
+    final_f1_test = evaluate_mark_over_dataloader(dl_test, 'f1')
+    final_mae_train = evaluate_timestamp_over_dataloader(dl_train)
+    final_mae_val = evaluate_timestamp_over_dataloader(dl_val)
+    final_mae_test = evaluate_timestamp_over_dataloader(dl_test)
+
 
 print(f'Negative log-likelihood:\n'
       f' - Train: {final_loss_train:.1f}\n'
       f' - Val:   {final_loss_val:.1f}\n'
-      f' - Test:  {final_loss_test:.1f}')
+      f' - Test:  {final_loss_test:.1f}\n'
+      f' - Train Acc: {final_acc_train * 100}\n'
+      f' - Val Acc:   {final_acc_val * 100}\n'
+      f' - Test Acc:  {final_acc_test * 100}\n'
+      f' - Train F1: {final_f1_train * 100}\n'
+      f' - Val F1:   {final_f1_val * 100}\n'
+      f' - Test F1:  {final_f1_test * 100}\n'
+      f' - Train MAE: {final_mae_train}\n'
+      f' - Val MAE:   {final_mae_val}\n'
+      f' - Test MAE:  {final_mae_test}\n')
 
-sampled_batch = model.sample(t_end=10000, batch_size=100)
+sampled_batch = model.sample(t_end=100000, batch_size=100)
 real_batch = dpp.data.Batch.from_list([s for s in dataset])
 plt.hist(sampled_batch.mask.sum(-1).cpu().numpy(), 50, label="Sampled", density=True, range=(0, 300))
 plt.hist(real_batch.mask.sum(-1).cpu().numpy(), 50, alpha=0.3, label="Real data", density=True, range=(0, 300))

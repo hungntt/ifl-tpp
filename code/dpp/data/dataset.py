@@ -39,7 +39,8 @@ def load_dataset(name: str, folder: Union[Path, str] = dataset_dir):
             inter_times=get_inter_times(seq),
             marks=seq.get("marks"),
             t_start=seq.get("t_start"),
-            t_end=seq.get("t_end")
+            t_end=seq.get("t_end"),
+            case=seq.get("case"),
         )
         for seq in dataset["sequences"]
     ]
